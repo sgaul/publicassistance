@@ -1,0 +1,172 @@
+---
+title       : Public assistance
+subtitle    : Hartford regional data and indicators
+author      : Scott Gaul
+job         : Community Indicators Project
+framework   : minimal        # {io2012, html5slides, shower, dzslides, ...}
+highlighter : highlight.js  # {highlight.js, prettify, highlight}
+hitheme     : tomorrow      # 
+ext_widgets : {rCharts: ["libraries/nvd3"]} 
+mode        : selfcontained # {standalone, draft}
+---
+
+## Public assistance indicators
+
+This page covers indicators related to whether Hartford area residents receive public assistance through various programs. 
+
+## Data and limitations
+
+Data on public assistance programs is available nationally through the Census Bureau, primarily the American Community Survey, and within Connecticut from the Department of Social Services. 
+
+## What do we already know?
+
+Indicators of cases and recipients of public assistance are used in a few reports. 
+
+### Local
+
+
+* [CT Fair Housing Center Opportunity Mapping](http://www.ctfairhousing.org/people-place-and-opportunity-report/) (developed with the Kirwan Institute at Ohio State) includes the population on public assistance as a factor in their opportunity index, using Census data.
+* [Population Results Working Group](http://www.ct.gov/opm/cwp/view.asp?a=2998&Q=490946) includes the percent of all households receiving SNAP (Supplemental Nutrition Assistance Program) using data from DSS.
+
+### Other relevant efforts
+
+* [What Matters to Metros](http://www.futurefundneo.org/whatmatters) includes data on the percentage of households receiving SSI, cash assistance, and food stamps, via Census data.
+
+## Sample results
+
+The census asks about [usage of public assistance](http://factfinder2.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_11_5YR_B19058&prodType=table), defined as foot stamps or SNAP. 
+
+The sample results below are for all towns in Hartford and Tolland Counties for convenience. 
+
+```{r echo = FALSE,warning = FALSE,message = FALSE, fig.width = 10, comment = NA, tidy = F}
+library(ggplot2)
+library(acs)
+library(maps)
+library(maptools)
+key = "ba67d3a427e1f785987b9c8bc59341bf7c8a7cc1"
+api.key.install(key)
+#hartford.towns = geo.make(state = "CT", county = c("Hartford","Tolland"), county.subdivision = "*", check = T)
+B19058 = acs.fetch(geography = hartford.towns, table.number = "B19058", col.names = "pretty")
+rate = divide.acs(numerator=B19058[,2],denominator=B19058[,1], method = 'proportion')
+
+assistance = data.frame(town=geography(B19058)[[1]],
+                        rate=as.numeric(estimate(rate)),
+                        se=standard.error(rate))
+names(assistance) <- c("town","rate","se")
+assistance$town= gsub(" town, Tolland County, Connecticut", "", assistance$town)
+assistance$town= gsub(" town, Hartford County, Connecticut", "", assistance$town)
+#Merge with data
+library(classInt)
+jenks <- classIntervals(assistance$rate, n=4, style="fisher")
+choropleth=merge(CTTowns, assistance, by.x = "id", by.y="town")
+choropleth=choropleth[order(choropleth$order), ]
+choropleth$rate=cut(choropleth$rate, breaks=jenks$brks, include.lowest=T, dig.lab = T)
+#Make the map
+ggplot(data = choropleth, aes(long, lat, group = group)) +
+  geom_polygon(aes(fill = rate)) + 
+  scale_x_continuous(breaks = NULL) +
+  scale_y_continuous(breaks = NULL) +
+  labs(x = NULL, y = NULL) + 
+  coord_equal() +
+  geom_polygon(data = CTTowns, colour = "grey", alpha = 0.5, fill = NA) +
+  scale_fill_brewer(palette = "Purples", name = "% population\non public assistance") +
+  theme_minimal()
+```
+
+Since the data is drawn from the ACS, there are margins of error associated with the values, which can be large for small towns. 
+
+Hartford has about twice the population on public assistance of the next highest town in the region, which itself has almost twice as high a rate as the next town. 
+
+```{r echo = FALSE, warning = FALSE, fig.height = 9, message = FALSE}
+assistance$town <- reorder(assistance$town, assistance$rate)
+library(scales)
+ggplot(data = assistance) + 
+  geom_point(aes(x = rate, y = town)) + 
+  geom_segment(aes(xend = rate - se, x = rate + se, y = town, yend = town), 
+               colour = "grey") + 
+  labs(x = '% of population on public assistance (2007 - 2011)', y = NULL) + 
+  scale_x_continuous(labels = percent) + 
+  theme_minimal()
+```
+
+The rates of public assistance usage track closely to poverty levels. The chart below compares poverty levels to usage of public assistance rates (on a log scale, to accomodate the large gaps between towns). 
+
+```{r echo = FALSE, warning = FALSE, fig.height = 9, message = FALSE}
+assistance <- merge(assistance, subset(gh, period == 2010), by.x = "town", by.y = "city")
+ggplot(data = assistance, aes(x = rate, y = poppovertyrate / 100)) + 
+  geom_text(aes(label = town)) +
+  scale_y_log10(labels = percent) + 
+  scale_x_log10(labels = percent) + 
+  labs(x = "% population on public assistance", y = "% living under poverty line") +
+  theme_minimal()
+```
+
+The census data on public assistance can also be looked at by neighborhood (for 5-year estimates). Neighborhood maps for the region confirm the high concentration of recipients of public assistance in Hartford. 
+
+```{r echo = FALSE,warning = FALSE,message = FALSE,fig.width = 10, fig.height = 10, comment = NA, tidy = F}
+#hartford.tracts = geo.make(state = "CT", county = c("Hartford","Tolland"), tract = "*", check = T)
+B19058 = acs.fetch(geography = hartford.tracts, table.number = "B19058", col.names = "pretty")
+
+rate.tract = divide.acs(numerator=B19058[,2],denominator=B19058[,1],method = 'proportion')
+
+assistance.tract = data.frame(town=geography(B19058)[[1]],
+                        rate=as.numeric(estimate(rate.tract)),
+                        se=standard.error(rate.tract))
+names(assistance.tract) <- c("tract","rate","se")
+assistance.tract$tract= gsub("Census Tract ", "", assistance.tract$tract)
+assistance.tract$tract= gsub(", Tolland County, Connecticut","", assistance.tract$tract)
+assistance.tract$tract= gsub(", Hartford County, Connecticut","", assistance.tract$tract)
+#Merge with data
+jenks <- classIntervals(assistance.tract$rate, n=4, style="fisher")
+#Make map
+choropleth=merge(CTTracts, assistance.tract, by.x = "id", by.y="tract")
+choropleth=choropleth[order(choropleth$order), ]
+choropleth$rate=cut(choropleth$rate,breaks=jenks$brks, 
+                         include.lowest=T, dig.lab = T)
+#Make the map
+ggplot(data = choropleth, aes(long, lat, group = group)) +
+  geom_polygon(aes(fill = rate)) + 
+  scale_x_continuous(breaks = NULL) +
+  scale_y_continuous(breaks = NULL) +
+  labs(x = NULL, y = NULL) + 
+  coord_equal() +
+  geom_polygon(data = CTTowns, colour = "grey", alpha = 0.5, fill = NA) +
+  scale_fill_brewer(palette = "Purples", name = "% population\non public assistance") +
+  theme_minimal()
+```
+
+DSS releases data on cases and recipients for HUSKY, Medicaid, TANF and foot stamps, published via the [CTData portal](http://ctdata.org/catalog).
+
+Aggregate data for the region shows increases in food stamps usage from 2008 to the present.
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+dss <- read.csv('dssdata.csv')
+dss <- subset(dss, dss$Town %in% levels(as.factor(towns$Town)))
+library(reshape)
+dss_region <- melt(ddply(dss,.(Year), summarise,
+                    tanf=weighted.mean(TANF.cases..Rate..per.1000.,
+                                       Total.estimated.households..Number),
+                    foodstamps = weighted.mean(Food.stamps.cases..Rate..per.1000.,
+                                               Total.estimated.households..Number.1)),
+                   id.vars = c("Year"))
+
+ggplot(data = dss_region, aes(x = Year, y = value)) + 
+  geom_line(aes(group = variable, colour = variable)) + 
+  labs(y = "Cases per 1000 residents") + 
+  theme_minimal() + 
+  ylim(0,200)
+```
+
+Looking at data by town shows that most of the increases have come through Hartford, although with higher numbers of cases also many other towns - East Hartford, Bloomfield and Manchester especially. 
+
+```{r echo = FALSE, warning = FALSE, message = FALSE, fig.height = 9}
+dss <- melt(dss, id.vars = c("Year","Town"))
+
+ggplot(data = subset(dss, variable %in% c("TANF.cases..Rate..per.1000.","Food.stamps.cases..Rate..per.1000.")), aes(x = Year, y = value)) + 
+  geom_line(aes(group = variable, colour = variable)) + 
+  labs(y = "Cases per 1000 residents") + 
+  theme_minimal() + 
+#  ylim(0,200) + 
+  facet_wrap(~ Town, ncol = 3)
+```
+
